@@ -1119,11 +1119,12 @@ bool forcejoints = false;
 void makeanims()
 {
     if(escale != 1) loopv(eposes) eposes[i].pos *= escale;
-    if(erotate != Quat(0, 0, 0, 1))
+    if(erotate != Quat(0, 0, 0, 1)) loopv(ejoints)
     {
-        for(int i = 0; i < eposes.length(); i += ejoints.length())
+        ejoint &ej = ejoints[i];
+        if(ej.parent < 0) for(int j = i; j < eposes.length(); j += ejoints.length())
         {
-            transform &p = eposes[i];
+            transform &p = eposes[j];
             p.orient = erotate * p.orient;
             p.pos = erotate.transform(p.pos);
         }
@@ -2446,7 +2447,6 @@ namespace fbx
     {
         enum { GEOM = 0, MODEL, MATERIAL, LIMB, CLUSTER, SKIN, CURVE, XFORM, ANIMLAYER, ANIMSTACK };
         enum { TRANS = 0, ROT, SCALE };
-        string name;
 
         virtual int type() = 0;
         virtual ~node() {}
@@ -2455,6 +2455,13 @@ namespace fbx
         virtual void finish() {}
     };
 
+    struct namednode : node
+    {
+        string name;
+
+        namednode() { name[0] = 0; }
+    };
+   
     struct geomnode;
     struct modelnode;
     struct materialnode;
@@ -2480,22 +2487,22 @@ namespace fbx
         void finish();
     };
 
-    struct modelnode : node
+    struct modelnode : namednode
     {
         materialnode *material;
-        Vec3 geomtrans, prerot, lclrot, lclscale;
+        Vec3 geomtrans, prerot, lcltrans, lclrot, lclscale;
 
-        modelnode() : material(NULL), geomtrans(0, 0, 0), prerot(0, 0, 0), lclrot(0, 0, 0), lclscale(1, 1, 1) {}
+        modelnode() : material(NULL), geomtrans(0, 0, 0), prerot(0, 0, 0), lcltrans(0, 0, 0), lclrot(0, 0, 0), lclscale(1, 1, 1) {}
 
         int type() { return MODEL; }
     };
 
-    struct materialnode : node
+    struct materialnode : namednode
     {
         int type() { return MATERIAL; }
     };
 
-    struct limbnode : node
+    struct limbnode : namednode
     {
         limbnode *parent;
         int index;
@@ -2531,6 +2538,8 @@ namespace fbx
     struct skinnode : node
     {
         geomnode *geom;
+
+        skinnode() : geom(NULL) {}
 
         int type() { return SKIN; }
     };
@@ -2573,7 +2582,7 @@ namespace fbx
         int type() { return XFORM; }
     };
 
-    struct animlayernode : node
+    struct animlayernode : namednode
     {
         vector<xformnode *> xforms;
 
@@ -2591,7 +2600,7 @@ namespace fbx
         int type() { return ANIMLAYER; }
     };
 
-    struct animstacknode : node
+    struct animstacknode : namednode
     {
         vector<animlayernode *> layers;
         double secs;
@@ -2804,6 +2813,11 @@ namespace fbx
                                 {
                                     loopi(3) if(!p.parse(t)) return;
                                     loopi(3) { if(!p.parse(t)) return; if(t.type != token::NUMBER) break; n->geomtrans[i] = t.f; }
+                                }
+                                else if(!strcmp(t.s, "Lcl Translation"))
+                                {
+                                    loopi(3) if(!p.parse(t)) return;
+                                    loopi(3) { if(!p.parse(t)) return; if(t.type != token::NUMBER) break; n->lcltrans[i] = t.f; }
                                 }
                                 else if(!strcmp(t.s, "Lcl Rotation"))
                                 {
@@ -3194,6 +3208,7 @@ namespace fbx
                     enormals[i] = prequat.transform(enormals[i]);
                 }
             }
+            if(model->lcltrans != Vec3(0, 0, 0)) for(int i = firstvert; i < lastvert; i++) epositions[i] += model->lcltrans;
         }
     }
 
